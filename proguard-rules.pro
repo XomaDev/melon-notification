@@ -1,3 +1,3 @@
--keep class com.example.hellolime.** { *; }
+-keep class space.themelon.melonnotification.** { *; }
 -keepattributes Signature,InnerClasses,EnclosingMethod
 -dontwarn **

@@ -4,7 +4,7 @@ plugins {
   kotlin("kapt") version "2.0.21"
 }
 
-group = "com.example.hellolime"
+group = "space.themelon.melonnotification"
 version = "1.0-SNAPSHOT"
 
 repositories {
