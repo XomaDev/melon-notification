@@ -10,7 +10,9 @@ import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Build
+import android.os.Parcel
 import android.widget.ImageView
+import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.google.appinventor.components.annotations.DesignerComponent
@@ -130,6 +132,16 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
       CreateChannel(channel, channel, null, NotificationManager.IMPORTANCE_DEFAULT)
     }
     return channel
+  }
+
+  @SimpleFunction
+  fun ReadRemotely(filePath: String): Any {
+    val file = form.openAsset(filePath)
+    val bytes = file.readBytes()
+    val parcel = Parcel.obtain()
+    parcel.unmarshall(bytes, 0, bytes.size)
+    val remoteView = RemoteViews(parcel)
+    return remoteView
   }
 
   private fun build(): Notification {
