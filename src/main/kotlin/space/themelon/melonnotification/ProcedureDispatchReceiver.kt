@@ -21,7 +21,7 @@ class ProcedureDispatchReceiver : BroadcastReceiver() {
     // ensure we are on the same screen where the procedure lies
     if (form::class.java.simpleName != screen) {
       throw YailRuntimeError("Cannot dispatch procedure event because application is not on " +
-          "screen ${screen} for procedure $procedure to be called", MelonNotification.TAG)
+          "screen $screen for procedure $procedure to be called", MelonNotification.TAG)
     }
 
     val argsString = intent.getStringExtra("arguments")!!

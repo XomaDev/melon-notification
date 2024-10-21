@@ -7,7 +7,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
-import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
@@ -19,6 +18,7 @@ import android.media.session.MediaSession
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.util.LruCache
 import android.widget.ImageView
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
@@ -29,6 +29,7 @@ import androidx.core.graphics.drawable.IconCompat
 import com.google.appinventor.components.annotations.*
 import com.google.appinventor.components.annotations.androidmanifest.ReceiverElement
 import com.google.appinventor.components.common.ComponentCategory
+import com.google.appinventor.components.common.PropertyTypeConstants
 import com.google.appinventor.components.runtime.AndroidNonvisibleComponent
 import com.google.appinventor.components.runtime.Form
 import com.google.appinventor.components.runtime.Image
@@ -37,7 +38,10 @@ import com.google.appinventor.components.runtime.util.JsonUtil
 import com.google.appinventor.components.runtime.util.YailDictionary
 import com.google.appinventor.components.runtime.util.YailList
 import gnu.text.FilePath
+import space.themelon.melonnotification.ImageHelper.getBitmap
 import java.io.FileInputStream
+import java.net.URL
+import kotlin.concurrent.thread
 import kotlin.random.Random
 
 @UsesBroadcastReceivers(
@@ -90,6 +94,15 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   private var dynamicConfig = ArrayList<(NotificationCompat.Builder) -> Unit>()
   private var extras = Bundle()
 
+  @DesignerProperty(
+    editorType = PropertyTypeConstants.PROPERTY_TYPE_BOOLEAN,
+    defaultValue = "False"
+  )
+  @SimpleProperty
+  fun CacheImages(bool: Boolean) {
+    ImageHelper.keepCache = bool
+  }
+
   @SimpleFunction(
     description = "Check if the notification permission is granted. " +
         "Always true for devices below Tiramisu."
@@ -124,7 +137,6 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   @SimpleFunction
   fun Build(title: String, text: String, icon: String) {
     val filterIcon = icon.trim()
-
     configure = { builder ->
       builder.setContentTitle(title)
       builder.setContentText(text)
@@ -256,7 +268,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     allowGeneratedReplies: Boolean,
     showUserInterface: Boolean,
   ) {
-    val iconBitmap = getBitmap("AddAction", icon, true)
+    val iconBitmapFuture = getBitmap("AddAction", icon, true)
     if (intent !is PendingIntent) {
       throw YailRuntimeError(
         "Please use the `CreateIntent` block to set the " +
@@ -264,6 +276,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
       )
     }
     dynamicConfig += {
+      val iconBitmap = iconBitmapFuture.get()
       it.addAction(
         NotificationCompat.Action.Builder(
           if (iconBitmap != null) IconCompat.createWithBitmap(iconBitmap) else null,
@@ -309,8 +322,8 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     dynamicConfig += {
       it.setStyle(
         BigPictureStyle()
-          .bigLargeIcon(largeIconBitmap)
-          .bigPicture(bigPictureBitmap)
+          .bigLargeIcon(largeIconBitmap.get())
+          .bigPicture(bigPictureBitmap.get())
           .setContentDescription(contentDescription)
           .setBigContentTitle(contentTitle)
           .setSummaryText(summaryText)
@@ -331,38 +344,15 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
       MediaMetadata.Builder().apply {
         putString(MediaMetadata.METADATA_KEY_TITLE, title)
         putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
-        albumArtBitmap?.let { putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it) }
+        albumArtBitmap.get()?.let { putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it) }
       }.build()
     )
   }
 
   @SimpleProperty
   fun LargeIcon(largeIcon: Any) {
-    val bitmap = getBitmap("LargeIcon", largeIcon, false)
+    val bitmap = getBitmap("LargeIcon", largeIcon, false).get()
     dynamicConfig += { it.setLargeIcon(bitmap) }
-  }
-
-  // TODO:
-  //  In future we would have to make this function async
-  //  so that it would support loading images from the web
-  private fun getBitmap(function: String, resource: Any, nullable: Boolean): Bitmap? = when (resource) {
-    is Image -> ((resource.view as ImageView).drawable as BitmapDrawable).bitmap
-    is FilePath, is String, is Uri -> {
-      val path = resource.toString()
-      if (path.isEmpty()) {
-        if (nullable) null
-        else throw YailRuntimeError("Empty image resource provided for '$function'", TAG)
-      } else if (path.contains('/')) {
-        BitmapFactory.decodeFile(path)
-      } else {
-        form.openAsset(path).use { BitmapFactory.decodeStream(it) }
-      }
-    }
-
-    else -> throw YailRuntimeError(
-      "Expected a URI or a file path or an Image component for LargeIcon," +
-          " but got ${resource.javaClass.simpleName} for '$function'", TAG
-    )
   }
 
   @SimpleProperty

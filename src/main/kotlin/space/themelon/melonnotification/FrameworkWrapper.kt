@@ -44,10 +44,6 @@ class FrameworkWrapper(context: Context, screen: String) {
     return success
   }
 
-  fun success(): Boolean {
-    return success
-  }
-
   fun call(procedure: String, vararg args: Any) {
     callProcedureMethod!!.invoke(framework, procedure, args)
   }
@@ -59,13 +55,6 @@ class FrameworkWrapper(context: Context, screen: String) {
       e.printStackTrace()
       return false
     }
-  }
-
-  enum class Result {
-    // well, we need something unique to return when
-    // procedure invocation fails...
-    BAD,
-    SUCCESS
   }
 
   companion object {
