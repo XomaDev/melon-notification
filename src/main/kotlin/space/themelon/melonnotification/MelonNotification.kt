@@ -9,6 +9,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
@@ -16,9 +17,11 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.widget.ImageView
+import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationCompat.BigPictureStyle
 import androidx.core.app.NotificationCompat.BigTextStyle
+import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.google.appinventor.components.annotations.*
 import com.google.appinventor.components.annotations.androidmanifest.ReceiverElement
@@ -26,6 +29,7 @@ import com.google.appinventor.components.common.ComponentCategory
 import com.google.appinventor.components.runtime.AndroidNonvisibleComponent
 import com.google.appinventor.components.runtime.Form
 import com.google.appinventor.components.runtime.Image
+import com.google.appinventor.components.runtime.PermissionResultHandler
 import com.google.appinventor.components.runtime.errors.YailRuntimeError
 import com.google.appinventor.components.runtime.util.JsonUtil
 import com.google.appinventor.components.runtime.util.YailDictionary
@@ -68,6 +72,28 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
 
   private var dynamicConfig = ArrayList<(NotificationCompat.Builder) -> Unit>()
   private var extras = Bundle()
+
+  @SimpleFunction(
+    description = "Check if the notification permission is granted. " +
+        "Always true for devices below Tiramisu."
+  )
+  fun PermissionGranted(): Boolean {
+    return if (ABOVE_TIRAMISU) {
+      ContextCompat.checkSelfPermission(
+        form, NOTIFICATIONS_PERMISSION) == PackageManager.PERMISSION_GRANTED
+    } else true
+  }
+
+  @SimpleFunction(description = "Ask for the notifications permission")
+  fun AskPermission() {
+    if (ABOVE_TIRAMISU) {
+      ActivityCompat.requestPermissions(
+        form,
+        arrayOf(NOTIFICATIONS_PERMISSION),
+        4080
+      )
+    }
+  }
 
   @SimpleFunction
   fun CreateChannel(id: String, name: String, description: String?, importance: Int) {
@@ -168,7 +194,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
 
   @SimpleFunction(
     description = "Create an procedure intent that will be called once a notification action is performed. Itoo must" +
-    "be present to use this feature."
+        "be present to use this feature."
   )
   fun CreateItooIntent(
     screen: String,
@@ -176,8 +202,10 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     arguments: YailList,
   ): Any {
     if (!FrameworkWrapper.isItooXPresent) {
-      throw YailRuntimeError("Please add Itoo extension to your project for " +
-          "`CreateItooIntent` block to work", TAG)
+      throw YailRuntimeError(
+        "Please add Itoo extension to your project for " +
+            "`CreateItooIntent` block to work", TAG
+      )
     }
     val intent = Intent(form, ItooBackgroundProcedureReceiver::class.java).apply {
       putExtra("screen", screen)
@@ -319,6 +347,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     val builder = NotificationCompat.Builder(form, getChannelId())
     configure(builder)
     dynamicConfig.forEach { it(builder) }
+    dynamicConfig.clear()
     builder.setExtras(extras)
     extras = Bundle()
     return builder.build()
@@ -356,5 +385,8 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
 
   companion object {
     const val TAG = "MelonNotification"
+
+    private val ABOVE_TIRAMISU = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+    private const val NOTIFICATIONS_PERMISSION = "android.permission.POST_NOTIFICATIONS"
   }
 }
