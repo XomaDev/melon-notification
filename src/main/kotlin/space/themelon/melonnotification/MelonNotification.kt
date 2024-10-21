@@ -5,31 +5,34 @@ package space.themelon.melonnotification
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.net.Uri
 import android.os.Build
-import android.os.Parcel
+import android.os.Bundle
 import android.widget.ImageView
-import android.widget.RemoteViews
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationCompat.BigPictureStyle
 import androidx.core.graphics.drawable.IconCompat
-import com.google.appinventor.components.annotations.DesignerComponent
-import com.google.appinventor.components.annotations.SimpleFunction
-import com.google.appinventor.components.annotations.SimpleObject
-import com.google.appinventor.components.annotations.SimpleProperty
-import com.google.appinventor.components.annotations.UsesPermissions
+import com.google.appinventor.components.annotations.*
 import com.google.appinventor.components.common.ComponentCategory
 import com.google.appinventor.components.runtime.AndroidNonvisibleComponent
 import com.google.appinventor.components.runtime.Form
 import com.google.appinventor.components.runtime.Image
 import com.google.appinventor.components.runtime.errors.YailRuntimeError
+import com.google.appinventor.components.runtime.util.YailDictionary
+import com.google.appinventor.components.runtime.util.YailList
 import gnu.text.FilePath
 import java.io.FileInputStream
 import kotlin.random.Random
 
-@UsesPermissions(permissionNames = "android.permission.POST_NOTIFICATIONS")
+@UsesPermissions(
+  permissionNames = "android.permission.POST_NOTIFICATIONS, " +
+      "android.permission.SYSTEM_ALERT_WINDOW"
+)
 @DesignerComponent(
   version = 1,
   category = ComponentCategory.EXTENSION,
@@ -50,7 +53,8 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     builder.setSmallIcon(android.R.drawable.ic_dialog_alert)
   }
 
-  private var properties = ArrayList<(NotificationCompat.Builder) -> Unit>()
+  private var dynamicConfig = ArrayList<(NotificationCompat.Builder) -> Unit>()
+  private var extras = Bundle()
 
   @SimpleFunction
   fun CreateChannel(id: String, name: String, description: String?, importance: Int) {
@@ -76,6 +80,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
           val iconCode = android.R.drawable::class.java.getField(fieldName).get(null) as Int
           builder.setSmallIcon(iconCode)
         }
+
         else -> {
           val stream = if (icon.contains('/')) FileInputStream(icon) else form.openAsset(icon)
           stream.use {
@@ -99,30 +104,91 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
 
   @SimpleProperty
   fun Subtext(subtext: String) {
-    properties += { it.setSubText(subtext) }
+    dynamicConfig += { it.setSubText(subtext) }
+  }
+
+  @SimpleProperty
+  fun ShowTimestamp(bool: Boolean) {
+    dynamicConfig += { it.setShowWhen(bool) }
+  }
+
+  @SimpleFunction
+  fun StartValue(screen: String, value: String) {
+    val clazz = if (screen.contains('.')) screen else form.packageName + screen
+    val intent = Intent(clazz).apply {
+      putExtra("APP_INVENTOR_START", value)
+      addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    val pd = PendingIntent.getActivity(
+      form,
+      System.currentTimeMillis().toInt(),
+      intent,
+      PendingIntent.FLAG_IMMUTABLE
+    )
+    extras.putString("clazz", clazz)
+    extras.putString("value", value)
+
+    dynamicConfig += { it.setContentIntent(pd) }
+  }
+
+  @SimpleFunction
+  fun BigPictureStyle(
+    largeIcon: Any,
+    bigPicture: Any,
+    contentDescription: String,
+    contentTitle: String,
+    summaryText: String,
+    showBigPictureWhenCollapsed: Boolean
+  ) {
+    val largeIconBitmap = getBitmap("BigPictureStyle[.largeIcon]", largeIcon, true)
+    val bigPictureBitmap = getBitmap("BigPictureStyle[.bigPicture]", bigPicture, true)
+    dynamicConfig += {
+      it.setStyle(
+        BigPictureStyle()
+          .bigLargeIcon(largeIconBitmap)
+          .bigPicture(bigPictureBitmap)
+          .setContentDescription(contentDescription)
+          .setBigContentTitle(contentTitle)
+          .setSummaryText(summaryText)
+          .showBigPictureWhenCollapsed(showBigPictureWhenCollapsed)
+      )
+    }
   }
 
   @SimpleProperty
   fun LargeIcon(largeIcon: Any) {
-    val bitmap: Bitmap = when (largeIcon) {
-      is Image -> ((largeIcon.view as ImageView).drawable as BitmapDrawable).bitmap
-      is FilePath, is String, is Uri -> {
-        val path = largeIcon.toString()
-        if (path.contains('/')) {
-          BitmapFactory.decodeFile(path)
-        } else {
-          form.openAsset(path).use { BitmapFactory.decodeStream(it) }
-        }
+    val bitmap = getBitmap("LargeIcon", largeIcon, false)
+    dynamicConfig += { it.setLargeIcon(bitmap) }
+  }
+
+  private fun getBitmap(function: String, resource: Any, nullable: Boolean): Bitmap? = when (resource) {
+    is Image -> ((resource.view as ImageView).drawable as BitmapDrawable).bitmap
+    is FilePath, is String, is Uri -> {
+      val path = resource.toString()
+      if (path.isEmpty()) {
+        if (nullable) null
+        else throw YailRuntimeError("Empty image resource provided for '$function'", TAG)
+      } else if (path.contains('/')) {
+        BitmapFactory.decodeFile(path)
+      } else {
+        form.openAsset(path).use { BitmapFactory.decodeStream(it) }
       }
-      else -> throw YailRuntimeError("Expected a URI or a file path or an Image component for LargeIcon," +
-          " but got ${largeIcon.javaClass.simpleName}", TAG)
     }
-    properties += { it.setLargeIcon(bitmap) }
+
+    else -> throw YailRuntimeError(
+      "Expected a URI or a file path or an Image component for LargeIcon," +
+          " but got ${resource.javaClass.simpleName} for '$function'", TAG
+    )
   }
 
   @SimpleProperty
   fun AutoCancel(bool: Boolean) {
-    properties += { it.setAutoCancel(bool) }
+    dynamicConfig += { it.setAutoCancel(bool) }
+  }
+
+  @SimpleProperty
+  fun AlertOnce(bool: Boolean) {
+    dynamicConfig += { it.setOnlyAlertOnce(bool) }
   }
 
   private fun getChannelId(): String {
@@ -134,25 +200,42 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     return channel
   }
 
-  @SimpleFunction
-  fun ReadRemotely(filePath: String): Any {
-    val file = form.openAsset(filePath)
-    val bytes = file.readBytes()
-    val parcel = Parcel.obtain()
-    parcel.unmarshall(bytes, 0, bytes.size)
-    val remoteView = RemoteViews(parcel)
-    return remoteView
-  }
-
   private fun build(): Notification {
     val builder = NotificationCompat.Builder(form, getChannelId())
     configure(builder)
-    properties.forEach { it(builder) }
+    dynamicConfig.forEach { it(builder) }
+    builder.setExtras(extras)
+    extras = Bundle()
     return builder.build()
   }
 
   @SimpleFunction
   fun Post(id: Int) {
-    manager.notify(if (id == -1) Random.nextInt() else id, build())
+    manager.notify(if (0 >= id) Random.nextInt() else id, build())
+  }
+
+  @SimpleFunction
+  fun Cancel(id: Int) {
+    manager.cancel(id)
+  }
+
+  @SimpleFunction
+  fun CancelAll() {
+    manager.cancelAll()
+  }
+
+  @SimpleProperty
+  fun ActiveNotificationsIds(): YailList = YailList.makeList(manager.activeNotifications.map { it.id })
+
+  @SimpleFunction
+  fun NotificationInfo(id: Int, ifNotFound: Any): Any {
+    val info = manager.activeNotifications.find { it.id == id } ?: return ifNotFound
+    val table = HashMap<Any, Any?>().apply {
+      put("postTime", info.postTime)
+      val extras = info.notification.extras
+      put("class", extras.getString("clazz"))
+      put("value", extras.getString("value"))
+    }
+    return YailDictionary.makeDictionary(table)
   }
 }
