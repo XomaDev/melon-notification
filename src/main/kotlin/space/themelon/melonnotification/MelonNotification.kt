@@ -27,6 +27,7 @@ import com.google.appinventor.components.runtime.AndroidNonvisibleComponent
 import com.google.appinventor.components.runtime.Form
 import com.google.appinventor.components.runtime.Image
 import com.google.appinventor.components.runtime.errors.YailRuntimeError
+import com.google.appinventor.components.runtime.util.JsonUtil
 import com.google.appinventor.components.runtime.util.YailDictionary
 import com.google.appinventor.components.runtime.util.YailList
 import gnu.text.FilePath
@@ -181,7 +182,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     val intent = Intent(form, ItooBackgroundProcedureReceiver::class.java).apply {
       putExtra("screen", screen)
       putExtra("procedure", procedure)
-      putExtra("arguments", arguments)
+      putExtra("arguments", JsonUtil.getJsonRepresentation(arguments))
     }
     return PendingIntent.getBroadcast(
       form,

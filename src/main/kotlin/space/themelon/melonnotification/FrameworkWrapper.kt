@@ -48,25 +48,8 @@ class FrameworkWrapper(context: Context, screen: String) {
     return success
   }
 
-  fun call(procedure: String, vararg args: Any): Any {
-    try {
-      return safeCall(procedure, args)
-    } catch (e: ReflectiveOperationException) {
-      e.printStackTrace()
-      return Result.BAD
-    }
-  }
-
-  @Throws(ReflectiveOperationException::class)
-  private fun safeCall(procedure: String, args: Array<out Any>): Any {
-    val callResult = callProcedureMethod!!.invoke(framework, procedure, args)
-    val callResultClazz: Class<*> = callResult.javaClass
-    // success()
-    val success = callResultClazz.getMethod("success").invoke(callResult) as Boolean
-    if (!success) {
-      return Result.BAD
-    }
-    return callResultClazz.getMethod("get").invoke(callResult)
+  fun call(procedure: String, vararg args: Any) {
+    callProcedureMethod!!.invoke(framework, procedure, args)
   }
 
   fun close(): Boolean {
