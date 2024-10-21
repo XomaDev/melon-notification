@@ -37,12 +37,20 @@ object ImageHelper {
             )
           }
 
-          asString.contains('/') -> return CompletableFuture.supplyAsync { BitmapFactory.decodeFile(asString) }
+          asString.contains('/') -> return CompletableFuture.supplyAsync {
+            val bitmap = BitmapFactory.decodeFile(asString)
+            bitmapCache.put(asString, bitmap)
+            bitmap
+          }
           asString.startsWith("url:") -> return CompletableFuture.supplyAsync {
-            BitmapFactory.decodeStream(URL(asString).openStream())
+            val bitmap = BitmapFactory.decodeStream(URL(asString).openStream())
+            bitmapCache.put(asString, bitmap)
+            bitmap
           }
           else -> return CompletableFuture.supplyAsync {
-            BitmapFactory.decodeStream(Form.getActiveForm().openAsset(asString))
+            val bitmap = BitmapFactory.decodeStream(Form.getActiveForm().openAsset(asString))
+            bitmapCache.put(asString, bitmap)
+            bitmap
           }
         }
       }
