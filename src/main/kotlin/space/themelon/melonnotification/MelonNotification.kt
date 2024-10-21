@@ -2,17 +2,20 @@
 
 package space.themelon.melonnotification
 
-import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
+import android.media.MediaMetadata
+import android.media.session.MediaSession
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -29,7 +32,6 @@ import com.google.appinventor.components.common.ComponentCategory
 import com.google.appinventor.components.runtime.AndroidNonvisibleComponent
 import com.google.appinventor.components.runtime.Form
 import com.google.appinventor.components.runtime.Image
-import com.google.appinventor.components.runtime.PermissionResultHandler
 import com.google.appinventor.components.runtime.errors.YailRuntimeError
 import com.google.appinventor.components.runtime.util.JsonUtil
 import com.google.appinventor.components.runtime.util.YailDictionary
@@ -60,6 +62,21 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
 
   init {
     FrameworkWrapper.activateItooX()
+
+    val procedureDispatcher = ProcedureDispatchReceiver()
+    form.registerForOnResume {
+      // listen to procedure dispatch requests, the user wants it this way
+      ContextCompat.registerReceiver(
+        form,
+        procedureDispatcher,
+        IntentFilter(PROCEDURE_DISPATCHER_ACTION),
+        ContextCompat.RECEIVER_NOT_EXPORTED
+      )
+    }
+
+    form.registerForOnPause {
+      form.unregisterReceiver(procedureDispatcher)
+    }
   }
 
   private val manager = form.getSystemService(NotificationManager::class.java) as NotificationManager
@@ -80,7 +97,8 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   fun PermissionGranted(): Boolean {
     return if (ABOVE_TIRAMISU) {
       ContextCompat.checkSelfPermission(
-        form, NOTIFICATIONS_PERMISSION) == PackageManager.PERMISSION_GRANTED
+        form, NOTIFICATIONS_PERMISSION
+      ) == PackageManager.PERMISSION_GRANTED
     } else true
   }
 
@@ -193,13 +211,15 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   }
 
   @SimpleFunction(
-    description = "Create an procedure intent that will be called once a notification action is performed. Itoo must" +
-        "be present to use this feature."
+    description = "Create an procedure intent that will be called once a notification action is performed. " +
+        "Itoo must be present to use this feature. If `callOnMain` is true, procedure " +
+        "is always called normally, and application must be running to receive it."
   )
   fun CreateItooIntent(
     screen: String,
     procedure: String,
     arguments: YailList,
+    alwaysOnMain: Boolean,
   ): Any {
     if (!FrameworkWrapper.isItooXPresent) {
       throw YailRuntimeError(
@@ -211,6 +231,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
       putExtra("screen", screen)
       putExtra("procedure", procedure)
       putExtra("arguments", JsonUtil.getJsonRepresentation(arguments))
+      putExtra("callOnMain", alwaysOnMain)
     }
     return PendingIntent.getBroadcast(
       form,
@@ -298,12 +319,32 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     }
   }
 
+  @SimpleFunction
+  fun MediaStyle(
+    title: String,
+    artist: String,
+    albumArt: Any
+  ) {
+    val albumArtBitmap = getBitmap("MediaStyle[.albumArt]", albumArt, true)
+    val session = MediaSession(form, "MelonNotificationMedia")
+    session.setMetadata(
+      MediaMetadata.Builder().apply {
+        putString(MediaMetadata.METADATA_KEY_TITLE, title)
+        putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
+        albumArtBitmap?.let { putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it) }
+      }.build()
+    )
+  }
+
   @SimpleProperty
   fun LargeIcon(largeIcon: Any) {
     val bitmap = getBitmap("LargeIcon", largeIcon, false)
     dynamicConfig += { it.setLargeIcon(bitmap) }
   }
 
+  // TODO:
+  //  In future we would have to make this function async
+  //  so that it would support loading images from the web
   private fun getBitmap(function: String, resource: Any, nullable: Boolean): Bitmap? = when (resource) {
     is Image -> ((resource.view as ImageView).drawable as BitmapDrawable).bitmap
     is FilePath, is String, is Uri -> {
@@ -385,6 +426,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
 
   companion object {
     const val TAG = "MelonNotification"
+    const val PROCEDURE_DISPATCHER_ACTION = "MelonNotificationProcedureDispatch"
 
     private val ABOVE_TIRAMISU = Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
     private const val NOTIFICATIONS_PERMISSION = "android.permission.POST_NOTIFICATIONS"
