@@ -2,10 +2,12 @@
 
 package space.themelon.melonnotification
 
+import android.app.Activity
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -16,8 +18,10 @@ import android.os.Bundle
 import android.widget.ImageView
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationCompat.BigPictureStyle
+import androidx.core.app.NotificationCompat.BigTextStyle
 import androidx.core.graphics.drawable.IconCompat
 import com.google.appinventor.components.annotations.*
+import com.google.appinventor.components.annotations.androidmanifest.ReceiverElement
 import com.google.appinventor.components.common.ComponentCategory
 import com.google.appinventor.components.runtime.AndroidNonvisibleComponent
 import com.google.appinventor.components.runtime.Form
@@ -29,6 +33,14 @@ import gnu.text.FilePath
 import java.io.FileInputStream
 import kotlin.random.Random
 
+@UsesBroadcastReceivers(
+  receivers = [
+    ReceiverElement(
+      name = "space.themelon.melonnotification.ItooBackgroundProcedureReceiver",
+      exported = "false"
+    )
+  ]
+)
 @UsesPermissions(
   permissionNames = "android.permission.POST_NOTIFICATIONS, " +
       "android.permission.SYSTEM_ALERT_WINDOW"
@@ -41,8 +53,8 @@ import kotlin.random.Random
 @SimpleObject(external = true)
 class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
 
-  companion object {
-    private const val TAG = "MelonNotification"
+  init {
+    FrameworkWrapper.activateItooX()
   }
 
   private val manager = form.getSystemService(NotificationManager::class.java) as NotificationManager
@@ -112,23 +124,125 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     dynamicConfig += { it.setShowWhen(bool) }
   }
 
+  @SimpleProperty
+  fun Intent(intent: Any?) {
+    if (intent !is PendingIntent) {
+      throw YailRuntimeError("Please use the `CreateIntent` block to set the `Intent` property", TAG)
+    }
+    dynamicConfig += { it.setContentIntent(intent) }
+  }
+
   @SimpleFunction
-  fun StartValue(screen: String, value: String) {
-    val clazz = if (screen.contains('.')) screen else form.packageName + screen
-    val intent = Intent(clazz).apply {
-      putExtra("APP_INVENTOR_START", value)
+  fun CreateIntent(
+    name: String,
+    startValue: String
+  ): Any {
+    val className = if (name.contains('.')) name else form.packageName + name
+    extras.putString("class", className)
+    extras.putString("value", startValue)
+
+    val clazz = Class.forName(className)
+    val intent = Intent(form, clazz).apply {
+      putExtra("name", name) // preserve original name
+      putExtra("startValue", startValue)
+      putExtra("APP_INVENTOR_START", startValue)
       addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     }
-    val pd = PendingIntent.getActivity(
+    return if (BroadcastReceiver::class.java.isAssignableFrom(clazz)) {
+      PendingIntent.getBroadcast(
+        form,
+        System.currentTimeMillis().toInt(),
+        intent,
+        PendingIntent.FLAG_IMMUTABLE
+      )
+    } else {
+      PendingIntent.getActivity(
+        form,
+        System.currentTimeMillis().toInt(),
+        intent,
+        PendingIntent.FLAG_IMMUTABLE
+      )
+    }
+  }
+
+  @SimpleFunction(
+    description = "Create an procedure intent that will be called once a notification action is performed. Itoo must" +
+    "be present to use this feature."
+  )
+  fun CreateItooIntent(
+    screen: String,
+    procedure: String,
+    arguments: YailList,
+  ): Any {
+    if (!FrameworkWrapper.isItooXPresent) {
+      throw YailRuntimeError("Please add Itoo extension to your project for " +
+          "`CreateItooIntent` block to work", TAG)
+    }
+    val intent = Intent(form, ItooBackgroundProcedureReceiver::class.java).apply {
+      putExtra("screen", screen)
+      putExtra("procedure", procedure)
+      putExtra("arguments", arguments)
+    }
+    return PendingIntent.getBroadcast(
       form,
       System.currentTimeMillis().toInt(),
       intent,
       PendingIntent.FLAG_IMMUTABLE
     )
-    extras.putString("clazz", clazz)
-    extras.putString("value", value)
+  }
 
-    dynamicConfig += { it.setContentIntent(pd) }
+  /**
+   * TODO:
+   * We would have to actually handle the user's input text fields when the action is triggered,
+   * possibly we may have to use Itoo with it to process operation it in background
+   */
+  @SimpleFunction
+  fun AddAction(
+    icon: Any,
+    title: String,
+    intent: Any?,
+    isContextual: Boolean,
+    authRequired: Boolean,
+    allowGeneratedReplies: Boolean,
+    showUserInterface: Boolean,
+  ) {
+    val iconBitmap = getBitmap("AddAction", icon, true)
+    if (intent !is PendingIntent) {
+      throw YailRuntimeError(
+        "Please use the `CreateIntent` block to set the " +
+            "`intent` property for `AddAction`", TAG
+      )
+    }
+    dynamicConfig += {
+      it.addAction(
+        NotificationCompat.Action.Builder(
+          if (iconBitmap != null) IconCompat.createWithBitmap(iconBitmap) else null,
+          title,
+          intent
+        ).apply {
+          setShowsUserInterface(showUserInterface)
+          setAllowGeneratedReplies(allowGeneratedReplies)
+          setContextual(isContextual)
+          setAuthenticationRequired(authRequired)
+        }.build()
+      )
+    }
+  }
+
+  @SimpleFunction
+  fun BigTextStyle(
+    text: String,
+    contentTitle: String,
+    summaryText: String
+  ) {
+    dynamicConfig += {
+      it.setStyle(
+        BigTextStyle()
+          .bigText(text)
+          .setBigContentTitle(contentTitle)
+          .setSummaryText(summaryText)
+      )
+    }
   }
 
   @SimpleFunction
@@ -237,5 +351,9 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
       put("value", extras.getString("value"))
     }
     return YailDictionary.makeDictionary(table)
+  }
+
+  companion object {
+    const val TAG = "MelonNotification"
   }
 }
