@@ -10,26 +10,15 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationCompat.BigPictureStyle
-import androidx.core.app.NotificationCompat.BigTextStyle
-import androidx.core.app.NotificationCompat.MessagingStyle
+import androidx.core.app.NotificationCompat.*
 import androidx.core.app.Person
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.IconCompat
-import com.google.appinventor.components.annotations.DesignerComponent
-import com.google.appinventor.components.annotations.DesignerProperty
-import com.google.appinventor.components.annotations.PropertyCategory
-import com.google.appinventor.components.annotations.SimpleFunction
-import com.google.appinventor.components.annotations.SimpleObject
-import com.google.appinventor.components.annotations.SimpleProperty
-import com.google.appinventor.components.annotations.UsesBroadcastReceivers
-import com.google.appinventor.components.annotations.UsesPermissions
+import com.google.appinventor.components.annotations.*
 import com.google.appinventor.components.annotations.androidmanifest.ReceiverElement
 import com.google.appinventor.components.common.ComponentCategory
 import com.google.appinventor.components.common.PropertyTypeConstants
@@ -37,7 +26,6 @@ import com.google.appinventor.components.runtime.AndroidNonvisibleComponent
 import com.google.appinventor.components.runtime.Form
 import com.google.appinventor.components.runtime.errors.YailRuntimeError
 import com.google.appinventor.components.runtime.util.JsonUtil
-import com.google.appinventor.components.runtime.util.YailDictionary
 import com.google.appinventor.components.runtime.util.YailList
 import space.themelon.melonnotification.ImageHelper.getBitmap
 import kotlin.random.Random
@@ -94,26 +82,31 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
 
   private var channel = "Default channel"
 
-  private var configure: (NotificationCompat.Builder) -> Unit = { builder ->
+  private var configure: (Builder) -> Unit = { builder ->
     builder.setSmallIcon(android.R.drawable.ic_dialog_alert)
   }
 
-  private var dynamicConfig = ArrayList<(NotificationCompat.Builder) -> Unit>()
+  private var dynamicConfig = ArrayList<(Builder) -> Unit>()
   private var extras = Bundle()
 
+  /**
+   * If you want the image resources used for the notification be cached
+   * at runtime for reuse.
+   * True by default.
+   */
   @DesignerProperty(
     editorType = PropertyTypeConstants.PROPERTY_TYPE_BOOLEAN,
-    defaultValue = "False"
+    defaultValue = "True"
   )
   @SimpleProperty(category = PropertyCategory.BEHAVIOR)
   fun CacheImages(bool: Boolean) {
     ImageHelper.keepCache = bool
   }
 
-  @SimpleFunction(
-    description = "Check if the notification permission is granted. " +
-        "Always true for devices below Tiramisu."
-  )
+  /**
+   * Returns true if we can post notifications. Always true for devices < Android 13.
+   */
+  @SimpleFunction
   fun PermissionGranted(): Boolean {
     return if (ABOVE_TIRAMISU) {
       ContextCompat.checkSelfPermission(
@@ -122,7 +115,10 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     } else true
   }
 
-  @SimpleFunction(description = "Ask for the notifications permission")
+  /**
+   * Ask the Post Notifications permission. Has no effect if called on devices < Android 13.
+   */
+  @SimpleFunction
   fun AskPermission() {
     if (ABOVE_TIRAMISU) {
       ActivityCompat.requestPermissions(
@@ -133,14 +129,28 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     }
   }
 
+  /**
+   * Create a new notification group (channel) that'll be used to post notifications.
+   * id is the string we use to refer to a particular channel.
+   * name and description are the text shown to user on the settings app.
+   * Importance levels: none 0, minimum 1, low 2, default 3, high 4, max 5.
+   * Last created channel will be used as default unless overridden by Channel property.
+   */
   @SimpleFunction
   fun CreateChannel(id: String, name: String, description: String?, importance: Int) {
     if (Build.VERSION.SDK_INT < 26) return // not applicable below oreo
     val channel = NotificationChannel(id, name, importance)
     channel.description = description
     manager.createNotificationChannel(channel)
+    this.channel = id
   }
 
+  /**
+   * Creates a new notification outline.
+   * Does not post the notification on its own.
+   * After using this block, you may further customize the notification by applying styles.
+   * Later, use the Post(Id) block to post the notification.
+   */
   @SimpleFunction
   fun Build(title: String, text: String, icon: String) {
     val iconBitmap = getBitmap("Build", icon, false)
@@ -152,6 +162,9 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     }
   }
 
+  /**
+   * Set the channel ID that you would want the notification to go through
+   */
   @SimpleProperty
   fun Channel(name: String) {
     name.trim().let {
@@ -162,33 +175,51 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     }
   }
 
+  /**
+   * Subtext for the notification, you probably do not need it most of the time.
+   * It is for additional information that
+   * appears as a label in the notification corner.
+   * It may not appear on some devices.
+   */
   @SimpleProperty
   fun Subtext(subtext: String) {
     dynamicConfig += { it.setSubText(subtext) }
   }
 
+  /**
+   * Check true if you want a timestamp to appear along the notification
+   * indicating the time when the notification was posted.
+   */
   @SimpleProperty
   fun ShowTimestamp(bool: Boolean) {
     dynamicConfig += { it.setShowWhen(bool) }
   }
 
+  /**
+   * Specify an action that'll occur when the user clicks on the Notification.
+   * Use CreateIntent or the CreateItooIntent block to set this property.
+   */
   @SimpleProperty
   fun Intent(intent: Any?) {
     if (intent !is PendingIntent) {
       throw YailRuntimeError(
-        "Please use the `CreateIntent` block to set the `Intent` property",
+        "Please use the `CreateIntent` or the `CreateItooIntent` block to set the Intent property",
         TAG
       )
     }
     dynamicConfig += { it.setContentIntent(intent) }
   }
 
+  /**
+   * Creates a new intent object.
+   * You may use it either for the Intent property for the Notification Actions.
+   */
   @SimpleFunction
   fun CreateIntent(
     name: String,
     startValue: String
   ): Any {
-    val className = if (name.contains('.')) name else form.packageName + name
+    val className = if (name.contains('.')) name else form.packageName + '.' + name
     extras.putString("class", className)
     extras.putString("value", startValue)
 
@@ -216,11 +247,13 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     }
   }
 
-  @SimpleFunction(
-    description = "Create an procedure intent that will be called once a notification action is performed. " +
-        "Itoo must be present to use this feature. If `callOnMain` is true, procedure " +
-        "is always called normally, and application must be running to receive it."
-  )
+  /**
+   * Create a procedure intent that'll be called once a notification action button is clicked.
+   * Itoo must be present to use this feature. If callOnMain is checked to true, procedure is always called normally
+   * in the U.I. only if the application is active. If you want the procedure to be called in a background mode always,
+   * then check it to false.
+   */
+  @SimpleFunction
   fun CreateItooIntent(
     screen: String,
     procedure: String,
@@ -248,9 +281,9 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   }
 
   /**
-   * TODO:
-   * We would have to actually handle the user's input text fields when the action is triggered,
-   * possibly we may have to use Itoo with it to process operation it in background
+   * Add an action button to the notification.
+   * Icon may not be shown on newer versions, only the text.
+   * Unless you set messaging style notification.
    */
   @SimpleFunction
   fun AddAction(
@@ -265,7 +298,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     val iconBitmapFuture = getBitmap("AddAction", icon, true)
     if (intent !is PendingIntent) {
       throw YailRuntimeError(
-        "Please use the `CreateIntent` block to set the " +
+        "Please use the `CreateIntent` block or the `CreateItooIntent` to set the " +
             "`intent` property for `AddAction`", TAG
       )
     }
@@ -286,6 +319,9 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     }
   }
 
+  /**
+   * For generating large-format notifications that include a lot of text.
+   */
   @SimpleFunction
   fun BigTextStyle(
     text: String,
@@ -302,6 +338,9 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     }
   }
 
+  /**
+   * For generating large-format notifications that include a large image attachment.
+   */
   @SimpleFunction
   fun BigPictureStyle(
     largeIcon: Any,
@@ -326,6 +365,10 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     }
   }
 
+  /**
+   * For generating large-format notifications that include a list of (up to 5) strings.
+   * lines: provide a list of messages/lines to be displayed
+   */
   @SimpleFunction
   fun InboxStyle(
     lines: YailList,
@@ -333,7 +376,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     summaryText: String
   ) {
     dynamicConfig += {
-      it.setStyle(NotificationCompat.InboxStyle().also { style ->
+      it.setStyle(InboxStyle().also { style ->
         lines.toStringArray().forEach { line ->
           style.addLine(line)
         }
@@ -343,6 +386,13 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     }
   }
 
+  /**
+   * Create a person object with the given details.
+   * To be used for the MessagingStyle and CreateMessage block.
+   * personId is a unique person identifier.
+   * uri is an optional string, mail or email of the person in format
+   * 'mailto:' schema or `tel:` schema
+   */
   @SimpleFunction
   fun CreatePerson(
     bot: Boolean,
@@ -363,6 +413,9 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
       .build()
   }
 
+  /**
+   * Create a message object with the given details. To be used for the MessagingStyle block.
+   */
   @SimpleFunction
   fun CreateMessage(
     person: Any,
@@ -378,6 +431,11 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     }
   }
 
+
+  /**
+   * For generating large-format notifications
+   * that include multiple back-and-forth messages of varying types between any number of people.
+   */
   @SimpleFunction
   fun MessagingStyle(
     person: Any,
@@ -391,7 +449,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     dynamicConfig += {
       it.setStyle(
         MessagingStyle(person)
-          .setConversationTitle(conversationTitle)
+          .setConversationTitle(conversationTitle.trim().ifEmpty { null })
           .setGroupConversation(groupConversation).also { style ->
             messages.toArray().forEach { message ->
               if (message !is MessagingStyle.Message) {
@@ -433,7 +491,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   }
 
   private fun build(): Notification {
-    val builder = NotificationCompat.Builder(form, getChannelId())
+    val builder = Builder(form, getChannelId())
     configure(builder)
     dynamicConfig.forEach { it(builder) }
     dynamicConfig.clear()
@@ -442,6 +500,9 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     return builder.build()
   }
 
+  /**
+   * Posts or updates the notification with the given ID.
+   */
   @SimpleFunction
   fun Post(id: Int) {
     manager.notify(if (0 >= id) Random.nextInt() else id, build())
@@ -460,18 +521,6 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   @SimpleProperty
   fun ActiveNotificationsIds(): YailList =
     YailList.makeList(manager.activeNotifications.map { it.id })
-
-  @SimpleFunction
-  fun NotificationInfo(id: Int, ifNotFound: Any): Any {
-    val info = manager.activeNotifications.find { it.id == id } ?: return ifNotFound
-    val table = HashMap<Any, Any?>().apply {
-      put("postTime", info.postTime)
-      val extras = info.notification.extras
-      put("class", extras.getString("clazz"))
-      put("value", extras.getString("value"))
-    }
-    return YailDictionary.makeDictionary(table)
-  }
 
   companion object {
     const val TAG = "MelonNotification"
