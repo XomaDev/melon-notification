@@ -10,38 +10,36 @@ import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.graphics.drawable.BitmapDrawable
-import android.media.MediaMetadata
-import android.media.session.MediaSession
-import android.net.Uri
+import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
-import android.util.LruCache
-import android.widget.ImageView
+import android.util.Log
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationCompat.BigPictureStyle
 import androidx.core.app.NotificationCompat.BigTextStyle
+import androidx.core.app.NotificationCompat.MessagingStyle
+import androidx.core.app.Person
 import androidx.core.content.ContextCompat
 import androidx.core.graphics.drawable.IconCompat
-import com.google.appinventor.components.annotations.*
+import com.google.appinventor.components.annotations.DesignerComponent
+import com.google.appinventor.components.annotations.DesignerProperty
+import com.google.appinventor.components.annotations.PropertyCategory
+import com.google.appinventor.components.annotations.SimpleFunction
+import com.google.appinventor.components.annotations.SimpleObject
+import com.google.appinventor.components.annotations.SimpleProperty
+import com.google.appinventor.components.annotations.UsesBroadcastReceivers
+import com.google.appinventor.components.annotations.UsesPermissions
 import com.google.appinventor.components.annotations.androidmanifest.ReceiverElement
 import com.google.appinventor.components.common.ComponentCategory
 import com.google.appinventor.components.common.PropertyTypeConstants
 import com.google.appinventor.components.runtime.AndroidNonvisibleComponent
 import com.google.appinventor.components.runtime.Form
-import com.google.appinventor.components.runtime.Image
 import com.google.appinventor.components.runtime.errors.YailRuntimeError
 import com.google.appinventor.components.runtime.util.JsonUtil
 import com.google.appinventor.components.runtime.util.YailDictionary
 import com.google.appinventor.components.runtime.util.YailList
-import gnu.text.FilePath
 import space.themelon.melonnotification.ImageHelper.getBitmap
-import java.io.FileInputStream
-import java.net.URL
-import kotlin.concurrent.thread
 import kotlin.random.Random
 
 @UsesBroadcastReceivers(
@@ -59,7 +57,8 @@ import kotlin.random.Random
 @DesignerComponent(
   version = 1,
   category = ComponentCategory.EXTENSION,
-  nonVisible = true
+  nonVisible = true,
+  iconName = "https://github.com/XomaDev/project_assets/blob/main/bell.png?raw=true"
 )
 @SimpleObject(external = true)
 class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
@@ -68,22 +67,30 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     FrameworkWrapper.activateItooX()
 
     val procedureDispatcher = ProcedureDispatchReceiver()
+    var registered = false
     form.registerForOnResume {
       // listen to procedure dispatch requests, the user wants it this way
-      ContextCompat.registerReceiver(
-        form,
-        procedureDispatcher,
-        IntentFilter(PROCEDURE_DISPATCHER_ACTION),
-        ContextCompat.RECEIVER_NOT_EXPORTED
-      )
+      if (!registered) {
+        ContextCompat.registerReceiver(
+          form,
+          procedureDispatcher,
+          IntentFilter(PROCEDURE_DISPATCHER_ACTION),
+          ContextCompat.RECEIVER_NOT_EXPORTED
+        )
+        registered = true
+      }
     }
 
     form.registerForOnPause {
-      form.unregisterReceiver(procedureDispatcher)
+      if (registered) {
+        form.unregisterReceiver(procedureDispatcher)
+        registered = false
+      }
     }
   }
 
-  private val manager = form.getSystemService(NotificationManager::class.java) as NotificationManager
+  private val manager =
+    form.getSystemService(NotificationManager::class.java) as NotificationManager
 
   private var channel = "Default channel"
 
@@ -98,7 +105,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     editorType = PropertyTypeConstants.PROPERTY_TYPE_BOOLEAN,
     defaultValue = "False"
   )
-  @SimpleProperty
+  @SimpleProperty(category = PropertyCategory.BEHAVIOR)
   fun CacheImages(bool: Boolean) {
     ImageHelper.keepCache = bool
   }
@@ -136,28 +143,12 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
 
   @SimpleFunction
   fun Build(title: String, text: String, icon: String) {
-    val filterIcon = icon.trim()
+    val iconBitmap = getBitmap("Build", icon, false)
     configure = { builder ->
       builder.setContentTitle(title)
       builder.setContentText(text)
 
-      when {
-        icon.isEmpty() -> builder.setSmallIcon(android.R.drawable.ic_dialog_alert)
-        icon.startsWith(':') -> {
-          // dynamically access android.R.drawable. field
-          val fieldName = filterIcon.substring(1).toLowerCase()
-          val iconCode = android.R.drawable::class.java.getField(fieldName).get(null) as Int
-          builder.setSmallIcon(iconCode)
-        }
-
-        else -> {
-          val stream = if (icon.contains('/')) FileInputStream(icon) else form.openAsset(icon)
-          stream.use {
-            val bytes = it.readAllBytes()
-            builder.setSmallIcon(IconCompat.createWithData(bytes, 0, bytes.size))
-          }
-        }
-      }
+      builder.setSmallIcon(IconCompat.createWithBitmap(iconBitmap.get()))
     }
   }
 
@@ -184,7 +175,10 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   @SimpleProperty
   fun Intent(intent: Any?) {
     if (intent !is PendingIntent) {
-      throw YailRuntimeError("Please use the `CreateIntent` block to set the `Intent` property", TAG)
+      throw YailRuntimeError(
+        "Please use the `CreateIntent` block to set the `Intent` property",
+        TAG
+      )
     }
     dynamicConfig += { it.setContentIntent(intent) }
   }
@@ -333,20 +327,84 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   }
 
   @SimpleFunction
-  fun MediaStyle(
+  fun InboxStyle(
+    lines: YailList,
     title: String,
-    artist: String,
-    albumArt: Any
+    summaryText: String
   ) {
-    val albumArtBitmap = getBitmap("MediaStyle[.albumArt]", albumArt, true)
-    val session = MediaSession(form, "MelonNotificationMedia")
-    session.setMetadata(
-      MediaMetadata.Builder().apply {
-        putString(MediaMetadata.METADATA_KEY_TITLE, title)
-        putString(MediaMetadata.METADATA_KEY_ARTIST, artist)
-        albumArtBitmap.get()?.let { putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it) }
-      }.build()
-    )
+    dynamicConfig += {
+      it.setStyle(NotificationCompat.InboxStyle().also { style ->
+        lines.toStringArray().forEach { line ->
+          style.addLine(line)
+        }
+        style.setBigContentTitle(title)
+        style.setSummaryText(summaryText)
+      })
+    }
+  }
+
+  @SimpleFunction
+  fun CreatePerson(
+    bot: Boolean,
+    personIcon: Any,
+    important: Boolean,
+    personId: String,
+    personName: String,
+    uri: String,
+  ): Any {
+    val personBitmap = getBitmap("MessagingStyle", personIcon, false)
+    return Person.Builder()
+      .setBot(bot)
+      .setIcon(IconCompat.createWithBitmap(personBitmap.get()))
+      .setImportant(important)
+      .setKey(personId)
+      .setName(personName)
+      .setUri(uri.trim().ifEmpty { null })
+      .build()
+  }
+
+  @SimpleFunction
+  fun CreateMessage(
+    person: Any,
+    message: String,
+    timestamp: Long,
+    historic: Boolean
+  ): Any {
+    if (person !is Person) {
+      throw YailRuntimeError("Please use CreatePerson block for the person parameter", TAG)
+    }
+    return MessagingStyle.Message(message, timestamp, person).also {
+      it.extras.putBoolean("historic", historic)
+    }
+  }
+
+  @SimpleFunction
+  fun MessagingStyle(
+    person: Any,
+    messages: YailList,
+    conversationTitle: String,
+    groupConversation: Boolean,
+  ) {
+    if (person !is Person) {
+      throw YailRuntimeError("Please use CreatePerson block for the person parameter", TAG)
+    }
+    dynamicConfig += {
+      it.setStyle(
+        MessagingStyle(person)
+          .setConversationTitle(conversationTitle)
+          .setGroupConversation(groupConversation).also { style ->
+            messages.toArray().forEach { message ->
+              if (message !is MessagingStyle.Message) {
+                throw YailRuntimeError("Please use the CreateMessage block to supply " +
+                    "a list of messages for the messages parameter", TAG)
+              }
+              val historic = message.extras.getBoolean("historic")
+              if (historic) style.addHistoricMessage(message)
+              else style.addMessage(message)
+            }
+          }
+      )
+    }
   }
 
   @SimpleProperty
@@ -400,7 +458,8 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   }
 
   @SimpleProperty
-  fun ActiveNotificationsIds(): YailList = YailList.makeList(manager.activeNotifications.map { it.id })
+  fun ActiveNotificationsIds(): YailList =
+    YailList.makeList(manager.activeNotifications.map { it.id })
 
   @SimpleFunction
   fun NotificationInfo(id: Int, ifNotFound: Any): Any {

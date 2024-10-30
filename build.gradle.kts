@@ -19,6 +19,7 @@ dependencies {
   compileOnly(rootProject.fileTree("lib/appinventor") {
     include("*.jar")
   })
+  implementation(rootProject.fileTree("lib/deps") { include("*.jar") })
 
   kapt(files("lib/appinventor/AnnotationProcessors.jar"))
 }
