@@ -13,7 +13,6 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import androidx.core.app.ActivityCompat
-import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationCompat.*
 import androidx.core.app.Person
 import androidx.core.content.ContextCompat
@@ -43,7 +42,8 @@ import kotlin.random.Random
       "android.permission.SYSTEM_ALERT_WINDOW"
 )
 @DesignerComponent(
-  version = 1,
+  version = 2,
+  versionName = "1.1",
   category = ComponentCategory.EXTENSION,
   nonVisible = true,
   iconName = "https://github.com/XomaDev/project_assets/blob/main/bell.png?raw=true"
@@ -212,6 +212,14 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   }
 
   /**
+   * Check to true if you want to make the notification permanent
+   */
+  @SimpleProperty
+  fun Ongoing(bool: Boolean) {
+    dynamicConfig += { it.setOngoing(bool) }
+  }
+
+  /**
    * Creates a new intent object.
    * You may use it either for the Intent property for the Notification Actions.
    */
@@ -306,7 +314,7 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     dynamicConfig += {
       val iconBitmap = iconBitmapFuture.get()
       it.addAction(
-        NotificationCompat.Action.Builder(
+        Action.Builder(
           if (iconBitmap != null) IconCompat.createWithBitmap(iconBitmap) else null,
           title,
           intent
