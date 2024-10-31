@@ -59,12 +59,13 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
     form.registerForOnResume {
       // listen to procedure dispatch requests, the user wants it this way
       if (!registered) {
-        ContextCompat.registerReceiver(
-          form,
-          procedureDispatcher,
-          IntentFilter(PROCEDURE_DISPATCHER_ACTION),
-          ContextCompat.RECEIVER_NOT_EXPORTED
-        )
+        val filter = IntentFilter(PROCEDURE_DISPATCHER_ACTION)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+          // with flag "receiver isn't exported" for API levels 26 onwards
+          form.registerReceiver(procedureDispatcher, filter, 4)
+        } else {
+          form.registerReceiver(procedureDispatcher, filter)
+        }
         registered = true
       }
     }
