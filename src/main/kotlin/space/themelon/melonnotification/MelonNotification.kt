@@ -42,8 +42,8 @@ import kotlin.random.Random
       "android.permission.SYSTEM_ALERT_WINDOW"
 )
 @DesignerComponent(
-  version = 2,
-  versionName = "1.1",
+  version = 3,
+  versionName = "1.2",
   category = ComponentCategory.EXTENSION,
   nonVisible = true,
   iconName = "https://github.com/XomaDev/project_assets/blob/main/bell.png?raw=true"
