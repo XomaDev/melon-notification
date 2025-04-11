@@ -14,18 +14,18 @@ class ItooBackgroundProcedureReceiver : BroadcastReceiver() {
     val callOnMain = intent.getBooleanExtra("callOnMain", false)
 
     if (callOnMain) {
+      // send all the payload to be dispatched on UI (if it's active)
+      context.sendBroadcast(
+        Intent(MelonNotification.PROCEDURE_DISPATCHER_ACTION)
+          .also { it.putExtras(intent.extras!!) }
+      )
+    } else {
       val procedure = intent.getStringExtra("procedure")!!
       val screen = intent.getStringExtra("screen")!!
       val yailArgs = intent.getStringExtra("arguments")!!
 
       val args = JsonUtil.getObjectFromJson(yailArgs, true) as ArrayList<*>
       FrameworkWrapper(context, screen).call(procedure, *args.toArray())
-    } else {
-      // send all the payload to be dispatched on UI (if it's active)
-      context.sendBroadcast(
-        Intent(MelonNotification.PROCEDURE_DISPATCHER_ACTION)
-          .also { it.putExtras(intent.extras!!) }
-      )
     }
   }
 }
