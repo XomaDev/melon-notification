@@ -72,7 +72,9 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
 
     form.registerForOnPause {
       if (registered) {
-        form.unregisterReceiver(procedureDispatcher)
+        try {
+          form.unregisterReceiver(procedureDispatcher)
+        } catch (ignored: Throwable) {}
         registered = false
       }
     }
@@ -515,6 +517,11 @@ class MelonNotification(form: Form) : AndroidNonvisibleComponent(form) {
   @SimpleFunction
   fun Post(id: Int) {
     manager.notify(if (0 >= id) Random.nextInt() else id, build())
+  }
+
+  @SimpleFunction
+  fun PostWithTag(tag: String, id: Int) {
+    manager.notify(tag, if (0 >= id) Random.nextInt() else id, build())
   }
 
   @SimpleFunction
